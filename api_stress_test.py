@@ -1,7 +1,5 @@
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-import matplotlib.animation as animation
-import sys
 import time
 import numpy as np
 import threading
@@ -12,8 +10,6 @@ import json
 my_mutex = threading.Lock()
 start_time = time.time()
 end_time = time.time()
-DURATION_ROUND = []
-# DURATION_STEP = []
 
 REPORTS = {
     "perSecond": {
@@ -36,22 +32,6 @@ REPORTS = {
         "timeouts": 0
     }
 }
-
-# REPORTS = {
-#     # "total_requests": 0,
-#     # "response_time": [],
-#     # "ok200_res_time": [],
-#     # "ok1000_res_time": [],
-#     # "avg_res_time": [],
-#     # "min_res_time": [],
-#     # "max_res_time": [],
-#     # "ok200_ratio": [],
-#     # "ok1000_ratio": [],
-#     # "err500_400": [],
-#     # "avg_ok200_res_time": [],
-#     # "avg_ok1000_res_time": [],
-#     # "timeouts": 0
-# }
 
 
 class Thrd(threading.Thread):
@@ -104,10 +84,16 @@ class Thrd(threading.Thread):
 # ################################### #
 # @title Get Fields
 url_field = "http://i-dia.ir/api/v1/"  # @param {type:"string"}
-api_name_field = "report/reports/steps"  # @param {type:"string"}
-method = "get"  # @param {type:"string"}
-duration = 3  # @param {type:"integer"} # Definition: total test time (in seconds)
-clients = 2  # @param {type:"integer"} # Definition: number of clients per second
+# api_name_field = "report/reports/steps"  # @param {type:"string"}
+api_package = {
+    "keys": ["api_path", "payload_path", "method", "name"],
+    "values": [
+        ["report/reports/steps", "payload_for_activity_get_api.txt", "get", "steps-get"],
+        ["report/sugar", "loader_io_payload - Copy.txt", "get", "sugar-get"]
+    ]
+}
+duration = 60  # @param {type:"integer"} # Definition: total test time (in seconds)
+clients = 20  # @param {type:"integer"} # Definition: number of clients per second
 rounds = 1  # @param {type:"integer"} # Definition: number of rounds
 sleep_after_each_round = 0  # @param {type:"integer"} # Definition: time to sleep after finishing each round (in seconds)
 # ################################### #
@@ -120,22 +106,25 @@ def start_test():
     url = url_field
     url = url + "/" if url[-1] != "/" else url
 
-    api = api_name_field
-
-    # load users token and phone number
     # with open('/content/gdrive/My Drive/Colab Notebooks/user_data.txt', 'r') as file:
-    with open("payload_for_activity_get_api.txt", "r") as file:
-        payload = json.load(file)
-    # payload has keys , values
+    payload = []
+    for api in api_package["values"]:
+        with open(api[1], "r") as file:
+            payload.append(json.load(file))
+    # Each payload has keys , values
 
-    payload_len = len(payload)
+    n_apis = len(api_package["values"])
+    used_api_names = []
     j = 0
     for i in range(clients):
         params = {}
-        for index, key in enumerate(payload["keys"]):
-            params[key] = payload["values"][j][index]
-        thrds.append(Thrd(url, api, params, method))
+        api_index = np.random.randint(0, n_apis)
+        payload_len = len(payload[api_index])
+        for index, key in enumerate(payload[api_index]["keys"]):
+            params[key] = payload[api_index]["values"][j][index]
+        thrds.append(Thrd(url, api_package["values"][api_index][0], params, api_package["values"][api_index][2]))
         j = (j + 1) % payload_len
+        used_api_names.append(api_package["values"][api_index][3])
 
     for thrd in thrds:
         thrd.start()
@@ -145,12 +134,11 @@ def start_test():
     for thrd in thrds:
         thrd.join()
 
-    print("Exiting Main Thread")
-    return 0
+    return used_api_names
 
 
 def run_trigger():
-    global REPORTS, start_time, end_time, DURATION_ROUND
+    global REPORTS, start_time, end_time
     for report in REPORTS["perSecond"]:
         REPORTS["perSecond"][report] = []
     for report in REPORTS["perTest"]:
@@ -170,8 +158,7 @@ def run_trigger():
             REPORTS["perSecond"]["err500_400_res_time"] = []
             start_time = time.time()
             # /// START TEST /// #
-            print("second {}th".format(j + 1))
-            start_test()
+            u_apis = start_test()
 
             elapsed_time = end_time - start_time
             time.sleep(1-elapsed_time if elapsed_time+0.01 < 1 else 0)
@@ -179,18 +166,21 @@ def run_trigger():
             REPORTS["perTest"]["avg_res_time"].append(np.average(np.array(REPORTS["perSecond"]["response_time"])))
             REPORTS["perTest"]["min_res_time"].append(np.min(np.array(REPORTS["perSecond"]["response_time"])))
             REPORTS["perTest"]["max_res_time"].append(np.max(np.array(REPORTS["perSecond"]["response_time"])))
-            REPORTS["perTest"]["avg_ok200_res_time"].append(np.average(np.array(REPORTS["perSecond"]["ok200_res_time"])))
-            if np.isnan(REPORTS["perTest"]["avg_ok200_res_time"][-1]):
-                REPORTS["perTest"]["avg_ok200_res_time"][-1] = 0
-            REPORTS["perTest"]["avg_ok1000_res_time"].append(np.average(np.array(REPORTS["perSecond"]["ok1000_res_time"])))
-            if np.isnan(REPORTS["perTest"]["avg_ok1000_res_time"][-1]):
-                REPORTS["perTest"]["avg_ok1000_res_time"][-1] = 0
-            REPORTS["perTest"]["avg_err500_400_res_time"].append(np.average(np.array(REPORTS["perSecond"]["err500_400_res_time"])))
-            if np.isnan(REPORTS["perTest"]["avg_err500_400_res_time"][-1]):
-                REPORTS["perTest"]["avg_err500_400_res_time"][-1] = 0
 
-            print("Second {}th\n-----------------------------\nAvg response time:{}s      min:{}s     max:{}s\n"
-                  "success:{}     error:{}     timeout:{}".format(j+1, REPORTS["perTest"]["avg_res_time"][-1],
+            temp = np.array(REPORTS["perSecond"]["ok200_res_time"])
+            REPORTS["perTest"]["avg_ok200_res_time"].append(np.average(temp) if len(temp) > 0 else 0)
+
+            temp = np.array(REPORTS["perSecond"]["ok1000_res_time"])
+            REPORTS["perTest"]["avg_ok1000_res_time"].append(np.average(temp) if len(temp) > 0 else 0)
+
+            temp = np.array(REPORTS["perSecond"]["err500_400_res_time"])
+            REPORTS["perTest"]["avg_err500_400_res_time"].append(np.average(temp) if len(temp) > 0 else 0)
+
+            print("\n-----------------------------\nSecond {}th    used APIs:{}\n"
+                  "Avg response time:{}s      min:{}s     max:{}s\n"
+                  "success:{}     error:{}     timeout:{}"
+                  "\n-----------------------------\n".format(j+1, u_apis,
+                                                                  REPORTS["perTest"]["avg_res_time"][-1],
                                                                   REPORTS["perTest"]["min_res_time"][-1],
                                                                   REPORTS["perTest"]["max_res_time"][-1],
                                                                   REPORTS["perTest"]["ok"],
