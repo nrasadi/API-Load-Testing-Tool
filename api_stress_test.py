@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.animation as animation
 import sys
 import time
 import numpy as np
@@ -63,7 +65,7 @@ class Thrd(threading.Thread):
     def run(self):
         global REPORTS, my_mutex
         my_mutex.acquire()
-        print("Starting " + self.name)
+        # print("Starting " + self.name)
         REPORTS["perTest"]["total_requests"] += 1
         my_mutex.release()
         try:
@@ -90,7 +92,7 @@ class Thrd(threading.Thread):
 
             my_mutex.acquire()
             REPORTS["perSecond"]["response_time"].append(r.elapsed.total_seconds())
-            print("{} status={}  Response_time= {}seconds".format(self.name, r.status_code, r.elapsed))
+            # print("{} status={}  Response_time= {}seconds".format(self.name, r.status_code, r.elapsed))
             my_mutex.release()
         except ValueError as Argument:
             my_mutex.acquire()
@@ -105,7 +107,7 @@ url_field = "http://i-dia.ir/api/v1/"  # @param {type:"string"}
 api_name_field = "report/reports/steps"  # @param {type:"string"}
 method = "get"  # @param {type:"string"}
 duration = 3  # @param {type:"integer"} # Definition: total test time (in seconds)
-clients = 5  # @param {type:"integer"} # Definition: number of clients per second
+clients = 2  # @param {type:"integer"} # Definition: number of clients per second
 rounds = 1  # @param {type:"integer"} # Definition: number of rounds
 sleep_after_each_round = 0  # @param {type:"integer"} # Definition: time to sleep after finishing each round (in seconds)
 # ################################### #
@@ -178,13 +180,59 @@ def run_trigger():
             REPORTS["perTest"]["min_res_time"].append(np.min(np.array(REPORTS["perSecond"]["response_time"])))
             REPORTS["perTest"]["max_res_time"].append(np.max(np.array(REPORTS["perSecond"]["response_time"])))
             REPORTS["perTest"]["avg_ok200_res_time"].append(np.average(np.array(REPORTS["perSecond"]["ok200_res_time"])))
+            if np.isnan(REPORTS["perTest"]["avg_ok200_res_time"][-1]):
+                REPORTS["perTest"]["avg_ok200_res_time"][-1] = 0
             REPORTS["perTest"]["avg_ok1000_res_time"].append(np.average(np.array(REPORTS["perSecond"]["ok1000_res_time"])))
+            if np.isnan(REPORTS["perTest"]["avg_ok1000_res_time"][-1]):
+                REPORTS["perTest"]["avg_ok1000_res_time"][-1] = 0
+            REPORTS["perTest"]["avg_err500_400_res_time"].append(np.average(np.array(REPORTS["perSecond"]["err500_400_res_time"])))
+            if np.isnan(REPORTS["perTest"]["avg_err500_400_res_time"][-1]):
+                REPORTS["perTest"]["avg_err500_400_res_time"][-1] = 0
+
+            print("Second {}th\n-----------------------------\nAvg response time:{}s      min:{}s     max:{}s\n"
+                  "success:{}     error:{}     timeout:{}".format(j+1, REPORTS["perTest"]["avg_res_time"][-1],
+                                                                  REPORTS["perTest"]["min_res_time"][-1],
+                                                                  REPORTS["perTest"]["max_res_time"][-1],
+                                                                  REPORTS["perTest"]["ok"],
+                                                                  REPORTS["perTest"]["err"],
+                                                                  REPORTS["perTest"]["timeouts"]))
+
+        plt.figure("Results", figsize=(12, 9))
+        mpl.rc('lines', linewidth=3)
+
+        plt.subplot(2, 1, 1)
+        plt.plot(np.arange(1, duration+1), np.array(REPORTS["perTest"]["avg_res_time"])*1000, label="average response time", color="#007acc")
+        plt.plot(np.arange(1, duration + 1), np.array(REPORTS["perTest"]["min_res_time"])*1000, label="min response time", color="#00b300")
+        plt.plot(np.arange(1, duration + 1), np.array(REPORTS["perTest"]["max_res_time"])*1000, label="max response time", color="red")
+        plt.xticks(np.arange(1, duration + 1))
+        plt.ylabel("Response time (milliseconds)")
+        plt.yticks(np.linspace(0, np.max(REPORTS["perTest"]["max_res_time"])*1000, 15))
+        plt.legend()
+        plt.grid(color="#cccccc")
+        plt.title("API stress test results")
+
+        plt.subplot(2, 1, 2)
+        plt.plot(np.arange(1, duration+1), np.array(REPORTS["perTest"]["avg_ok200_res_time"])*1000, label="average success response time", color="#007acc")
+        plt.plot(np.arange(1, duration + 1), np.array(REPORTS["perTest"]["avg_err500_400_res_time"])*1000, label="average error response time", color="red")
+        plt.xlabel("Duration (seconds)")
+        plt.xticks(np.arange(1, duration + 1))
+        plt.ylabel("Response time (milliseconds)")
+        plt.yticks(np.linspace(0, np.max(REPORTS["perTest"]["max_res_time"])*1000, 15))
+        plt.legend()
+        plt.grid(color="#cccccc")
+
+        plt.figure("Response distribution", figsize=(5, 5))
+        plt.pie([REPORTS["perTest"]["ok"], REPORTS["perTest"]["err"], REPORTS["perTest"]["timeouts"]],
+                labels=('Success', 'Error 500/400', 'Timeouts'), autopct='%1.1f%%', startangle=90,
+                colors=('#00b300', 'yellow', 'red'), labeldistance=0.5)
+
+        plt.show()
 
         time.sleep(sleep_after_each_round)
         print("End of the round {}. sleep {}".format(i, sleep_after_each_round))
 
 run_trigger()
-print("avg_res_time:{}\nmin_res_time:{}\nmax_res_time{}\navg_ok200_res_time{}\navg_err500_400_res_time{}\n"
+print("avg_res_time:{}s\nmin_res_time:{}s\nmax_res_time{}s\navg_ok200_res_time{}s\navg_err500_400_res_time{}s\n"
       .format(REPORTS["perTest"]["avg_res_time"], REPORTS["perTest"]["min_res_time"], REPORTS["perTest"]["max_res_time"],
               REPORTS["perTest"]["avg_ok200_res_time"], REPORTS["perTest"]["avg_err500_400_res_time"]))
 print("ok:{}\nerror:{}\ntimeout:{}\ntotal:{}".format(REPORTS["perTest"]["ok"],
