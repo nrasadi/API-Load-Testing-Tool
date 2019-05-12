@@ -176,7 +176,7 @@ def run_trigger():
             temp = np.array(REPORTS["perSecond"]["err500_400_res_time"])
             REPORTS["perTest"]["avg_err500_400_res_time"].append(np.average(temp) if len(temp) > 0 else 0)
 
-            print("\n-----------------------------\nSecond {}th    used APIs:{}\n"
+            print("\n-----------------------------\nSecond #{}    used APIs:{}\n"
                   "Avg response time:{}s      min:{}s     max:{}s\n"
                   "success:{}     error:{}     timeout:{}"
                   "\n-----------------------------\n".format(j+1, u_apis,
