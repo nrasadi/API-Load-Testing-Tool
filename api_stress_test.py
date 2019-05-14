@@ -1,15 +1,43 @@
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import time
+from datetime import datetime
+import pytz
 import numpy as np
 import threading
 import requests as req
 import json
 
+
+# ################################### #
+# @title Get Fields
+url_field = "http://i-dia.ir/api/v1/"  # @param {type:"string"}
+# api_name_field = "report/reports/steps"  # @param {type:"string"}
+duration = 3  # @param {type:"integer"} #Definition: total test time (in seconds)
+clients = 20  # @param {type:"integer"} #Definition: number of clients per second
+rounds = 1  # @param {type:"integer"} #Definition: number of rounds
+request_timeout = 10 # @param {type:"integer"} #Definition: timeout after request_timeout seconds
+sleep_after_each_round = 0  # @param {type:"integer"} #Definition: time to sleep after finishing each round (in seconds)
+result_log_path = "results"  # @param {type:"string"}
+
+gdrive = "/content/gdrive/My Drive/payloads/"
+gdrive = ""
+api_package = {
+    "keys": ["api_path", "payload_path", "method", "name"],
+    "values": [
+        ["report/reports/steps", gdrive+"payload_for_activity_get_api.txt", "get", "steps-get"],
+#         ["report/sugar", gdrive+"loader_io_payload - Copy.txt", "get", "sugar-get"]
+    ]
+}
+# ################################### #
+
+
 """ Global Variables """
 my_mutex = threading.Lock()
 start_time = time.time()
 end_time = time.time()
+dt = datetime.now(tz=pytz.timezone("Asia/Tehran"))
+save_name = ((str(dt).split(" ")[0] + "-" + str(dt).split(" ")[1]).split("+")[0]).split(".")[0].replace(":", "-")
 
 REPORTS = {
     "perSecond": {
@@ -29,7 +57,10 @@ REPORTS = {
         "total_requests": 0,
         "ok": 0,
         "err": 0,
-        "timeouts": 0
+        "timeouts": 0,
+        "mean_avg": 0,
+        "global_max": [0, 0], # x,y
+        "global_min": [0, np.inf]
     }
 }
 
@@ -45,14 +76,13 @@ class Thrd(threading.Thread):
     def run(self):
         global REPORTS, my_mutex
         my_mutex.acquire()
-        # print("Starting " + self.name)
         REPORTS["perTest"]["total_requests"] += 1
         my_mutex.release()
         try:
             if self.method == "get":
-                r = req.get(self.url + self.api, self.params, timeout=10, verify=False)
+                r = req.get(self.url + self.api, self.params, timeout=request_timeout, verify=False)
             else:
-                r = req.get(self.url + self.api, self.params, timeout=10, verify=False)
+                r = req.get(self.url + self.api, self.params, timeout=request_timeout, verify=False)
 
             if r.status_code == 200:
                 my_mutex.acquire()
@@ -72,31 +102,14 @@ class Thrd(threading.Thread):
 
             my_mutex.acquire()
             REPORTS["perSecond"]["response_time"].append(r.elapsed.total_seconds())
-            # print("{} status={}  Response_time= {}seconds".format(self.name, r.status_code, r.elapsed))
             my_mutex.release()
         except ValueError as Argument:
             my_mutex.acquire()
-            print("Exception on Thrd->run: ".format(Argument))
+            s = "Exception on Thrd->run: ".format(Argument)
+            print(s, file=open(f'{result_log_path}-{save_name}', 'a'))
+            print(s)
             REPORTS["perSecond"]["timeouts"] += 1
             my_mutex.release()
-
-
-# ################################### #
-# @title Get Fields
-url_field = "http://i-dia.ir/api/v1/"  # @param {type:"string"}
-# api_name_field = "report/reports/steps"  # @param {type:"string"}
-api_package = {
-    "keys": ["api_path", "payload_path", "method", "name"],
-    "values": [
-        ["report/reports/steps", "payload_for_activity_get_api.txt", "get", "steps-get"],
-        ["report/sugar", "loader_io_payload - Copy.txt", "get", "sugar-get"]
-    ]
-}
-duration = 60  # @param {type:"integer"} # Definition: total test time (in seconds)
-clients = 20  # @param {type:"integer"} # Definition: number of clients per second
-rounds = 1  # @param {type:"integer"} # Definition: number of rounds
-sleep_after_each_round = 0  # @param {type:"integer"} # Definition: time to sleep after finishing each round (in seconds)
-# ################################### #
 
 
 def start_test():
@@ -147,9 +160,14 @@ def run_trigger():
     REPORTS["perTest"]["timeouts"] = 0
     REPORTS["perTest"]["ok"] = 0
     REPORTS["perTest"]["err"] = 0
+    REPORTS["perTest"]["global_min"] = [0, np.inf]
+    REPORTS["perTest"]["global_max"] = [0, 0]
+    REPORTS["perTest"]["mean_avg"] = 0
 
     for i in range(rounds):
-        print("Round {}".format(i + 1))
+        s = "Round {}".format(i + 1)
+        print(s, file=open(f'{result_log_path}-{save_name}', 'a'))
+        print(s)
 
         for j in range(duration):
             REPORTS["perSecond"]["response_time"] = []
@@ -175,17 +193,27 @@ def run_trigger():
 
             temp = np.array(REPORTS["perSecond"]["err500_400_res_time"])
             REPORTS["perTest"]["avg_err500_400_res_time"].append(np.average(temp) if len(temp) > 0 else 0)
-
-            print("\n-----------------------------\nSecond #{}    used APIs:{}\n"
-                  "Avg response time:{}s      min:{}s     max:{}s\n"
-                  "success:{}     error:{}     timeout:{}"
-                  "\n-----------------------------\n".format(j+1, u_apis,
+            s = "\n-----------------------------\nSecond #{}    used APIs:{}\n" \
+                "Avg response time:{}s      min:{}s     max:{}s\n" \
+                "success:{}     error:{}     timeout:{}"\
+                "\n-----------------------------\n".format(j+1, u_apis,
                                                                   REPORTS["perTest"]["avg_res_time"][-1],
                                                                   REPORTS["perTest"]["min_res_time"][-1],
                                                                   REPORTS["perTest"]["max_res_time"][-1],
                                                                   REPORTS["perTest"]["ok"],
                                                                   REPORTS["perTest"]["err"],
-                                                                  REPORTS["perTest"]["timeouts"]))
+                                                                  REPORTS["perTest"]["timeouts"])
+            print(s, file=open(f'{result_log_path}-{save_name}', 'a'))
+            print(s)
+
+        rnd_avg = np.average(REPORTS["perTest"]["avg_res_time"])*1000
+        rnd_min = [np.argmin(REPORTS["perTest"]["min_res_time"])+1, np.min(REPORTS["perTest"]["min_res_time"])*1000]
+        rnd_max = [np.argmax(REPORTS["perTest"]["max_res_time"])+1, np.max(REPORTS["perTest"]["max_res_time"])*1000]
+        REPORTS["perTest"]["mean_avg"] = (rnd_avg + REPORTS["perTest"]["mean_avg"]*i) / (i+1)
+        if REPORTS["perTest"]["global_max"][1] < rnd_max[1]:
+            REPORTS["perTest"]["global_max"] = rnd_max
+        if REPORTS["perTest"]["global_min"][1] > rnd_min[1]:
+            REPORTS["perTest"]["global_min"] = rnd_min
 
         plt.figure("Results", figsize=(12, 9))
         mpl.rc('lines', linewidth=3)
@@ -194,6 +222,13 @@ def run_trigger():
         plt.plot(np.arange(1, duration+1), np.array(REPORTS["perTest"]["avg_res_time"])*1000, label="average response time", color="#007acc")
         plt.plot(np.arange(1, duration + 1), np.array(REPORTS["perTest"]["min_res_time"])*1000, label="min response time", color="#00b300")
         plt.plot(np.arange(1, duration + 1), np.array(REPORTS["perTest"]["max_res_time"])*1000, label="max response time", color="red")
+
+        plt.hlines(REPORTS["perTest"]["mean_avg"], 1, duration, colors='#f7ba02', linestyles='-',
+                   label=f'mean average ({REPORTS["perTest"]["mean_avg"]:.0f})ms', linewidth=3)
+        plt.hlines(REPORTS["perTest"]["global_max"][1], 1, duration, colors='#aa0000', linestyles='--',
+                   label=f'global max ({REPORTS["perTest"]["global_max"][1]:.0f})ms', linewidth=3)
+        plt.hlines(REPORTS["perTest"]["global_min"][1], 1, duration, colors='#008204', linestyles='--',
+                   label=f'global min ({REPORTS["perTest"]["global_min"][1]:.0f})ms', linewidth=3)
         plt.xticks(np.arange(1, duration + 1))
         plt.ylabel("Response time (milliseconds)")
         plt.yticks(np.linspace(0, np.max(REPORTS["perTest"]["max_res_time"])*1000, 15))
@@ -211,19 +246,40 @@ def run_trigger():
         plt.legend()
         plt.grid(color="#cccccc")
 
-        plt.figure("Response distribution", figsize=(5, 5))
-        plt.pie([REPORTS["perTest"]["ok"], REPORTS["perTest"]["err"], REPORTS["perTest"]["timeouts"]],
-                labels=('Success', 'Error 500/400', 'Timeouts'), autopct='%1.1f%%', startangle=90,
-                colors=('#00b300', 'yellow', 'red'), labeldistance=0.5)
 
+        plt.savefig("StressTest-results"+save_name)
+
+        plt.figure("Response distribution", figsize=(5, 5))
+        reports = [REPORTS["perTest"]["ok"], REPORTS["perTest"]["err"], REPORTS["perTest"]["timeouts"]]
+        labels = ['Success', 'Error 500/400', 'Timeouts']
+        colors = ['#00b300', 'yellow', 'red']
+        for ir, report in enumerate(reports):
+            if report == 0:
+                labels.remove(labels[ir])
+                colors.remove(colors[ir])
+                reports.remove(reports[ir])
+
+        plt.pie(reports, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors, labeldistance=0.5)
+
+        plt.savefig("StressTest-pieChart"+save_name)
         plt.show()
 
         time.sleep(sleep_after_each_round)
-        print("End of the round {}. sleep {}".format(i, sleep_after_each_round))
+        s = "End of the round {}. sleep {}".format(i, sleep_after_each_round)
+        print(s, file=open(f'{result_log_path}-{save_name}', 'a'))
+        print(s)
 
 run_trigger()
-print("avg_res_time:{}s\nmin_res_time:{}s\nmax_res_time{}s\navg_ok200_res_time{}s\navg_err500_400_res_time{}s\n"
-      .format(REPORTS["perTest"]["avg_res_time"], REPORTS["perTest"]["min_res_time"], REPORTS["perTest"]["max_res_time"],
-              REPORTS["perTest"]["avg_ok200_res_time"], REPORTS["perTest"]["avg_err500_400_res_time"]))
+
+s = "avg_res_time:{}s\nmin_res_time:{}s\nmax_res_time:{}s\navg_ok200_res_time:{}s\navg_err500_400_res_time:{}s\n"\
+    .format(REPORTS["perTest"]["avg_res_time"], REPORTS["perTest"]["min_res_time"], REPORTS["perTest"]["max_res_time"],
+              REPORTS["perTest"]["avg_ok200_res_time"], REPORTS["perTest"]["avg_err500_400_res_time"])
+print(s, file=open(f'{result_log_path}-{save_name}', 'a'))
+print(s)
 print("ok:{}\nerror:{}\ntimeout:{}\ntotal:{}".format(REPORTS["perTest"]["ok"],
       REPORTS["perTest"]["err"], REPORTS["perTest"]["timeouts"], REPORTS["perTest"]["total_requests"]))
+
+s = "mean average response time:{:.0f}ms   global min response time:{:.0f}ms    global max response time:{:.0f}ms".format(
+REPORTS["perTest"]["mean_avg"], REPORTS["perTest"]["global_min"][1], REPORTS["perTest"]["global_max"][1])
+print(s, file=open(f'{result_log_path}-{save_name}', 'a'))
+print(s)
