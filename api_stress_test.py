@@ -11,7 +11,7 @@ import json
 
 # ################################### #
 # @title Get Fields
-url_field = "http://i-dia.ir/api/v1/"  # @param {type:"string"}
+url_field = "url_field"  # @param {type:"string"}
 # api_name_field = "report/reports/steps"  # @param {type:"string"}
 duration = 3  # @param {type:"integer"} #Definition: total test time (in seconds)
 clients = 20  # @param {type:"integer"} #Definition: number of clients per second
@@ -20,13 +20,11 @@ request_timeout = 10 # @param {type:"integer"} #Definition: timeout after reques
 sleep_after_each_round = 0  # @param {type:"integer"} #Definition: time to sleep after finishing each round (in seconds)
 result_log_path = "results"  # @param {type:"string"}
 
-gdrive = "/content/gdrive/My Drive/payloads/"
-gdrive = ""
+gdrive = "gdrive_path"
 api_package = {
     "keys": ["api_path", "payload_path", "method", "name"],
     "values": [
-        ["report/reports/steps", gdrive+"payload_for_activity_get_api.txt", "get", "steps-get"],
-#         ["report/sugar", gdrive+"loader_io_payload - Copy.txt", "get", "sugar-get"]
+        ["report/reports/steps", gdrive+"payload_name.txt", "get", "steps-get"],
     ]
 }
 # ################################### #
@@ -119,7 +117,7 @@ def start_test():
     url = url_field
     url = url + "/" if url[-1] != "/" else url
 
-    # with open('/content/gdrive/My Drive/Colab Notebooks/user_data.txt', 'r') as file:
+#     with open('user_data_path' 'r') as file:
     payload = []
     for api in api_package["values"]:
         with open(api[1], "r") as file:
